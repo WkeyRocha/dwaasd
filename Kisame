@@ -1,0 +1,225 @@
+-- LocalScript: coloque em StarterPlayerScripts ou StarterCharacterScripts
+
+local Players = game:GetService("Players")
+local Workspace = game:GetService("Workspace")
+local RunService = game:GetService("RunService")
+
+local TELEPORT_OFFSET_ABOVE_HEAD = 1.6
+local WAIT_BETWEEN_TELEPORTS = 0.5
+local HEAD_FIND_RETRIES = 6
+local HEAD_FIND_RETRY_DELAY = 0.03
+local MAX_KISAMES_TO_PROCESS = 200
+local MAX_Y_ALLOWED = 10000
+local IDLE_WAIT_IF_NONE = 0.5
+local MIN_WAIT_AFTER_SUCCESS = 0.5
+
+local player = Players.LocalPlayer
+if not player then
+    warn("[TeleportPersistent1s] LocalPlayer ausente; este script precisa ser um LocalScript.")
+    return
+end
+
+local currentCharacter = player.Character
+player.CharacterAdded:Connect(function(char)
+    currentCharacter = char
+end)
+
+local function isValidPosition(pos)
+    if typeof(pos) ~= "Vector3" then return false end
+    if pos.X ~= pos.X or pos.Y ~= pos.Y or pos.Z ~= pos.Z then return false end
+    if math.abs(pos.Y) > MAX_Y_ALLOWED then return false end
+    return true
+end
+
+local function findKisames()
+    local enemies = Workspace:FindFirstChild("Enemies")
+    if not enemies then return {} end
+    local seen = {}
+    local list = {}
+
+    for _, child in ipairs(enemies:GetChildren()) do
+        if child.Name == "Kisame" then
+            if not seen[child] then
+                table.insert(list, child)
+                seen[child] = true
+            end
+        end
+    end
+
+    for _, obj in ipairs(enemies:GetDescendants()) do
+        if obj.Name == "Kisame" then
+            local model = obj
+            if not obj:IsA("Model") then
+                local anc = obj:FindFirstAncestorOfClass("Model")
+                if anc and anc:IsDescendantOf(enemies) then
+                    model = anc
+                end
+            end
+            if model and not seen[model] then
+                table.insert(list, model)
+                seen[model] = true
+            end
+        end
+    end
+
+    return list
+end
+
+local function findHeadPartInModel(model)
+    if not model then return nil end
+
+    for _, d in ipairs(model:GetChildren()) do
+        if d:IsA("BasePart") then
+            local lname = string.lower(d.Name)
+            if lname == "head" or lname:find("head") then
+                return d
+            end
+        end
+    end
+
+    for _, d in ipairs(model:GetDescendants()) do
+        if d:IsA("BasePart") then
+            local lname = string.lower(d.Name)
+            if lname == "head" or lname:find("head") then
+                return d
+            end
+        end
+    end
+
+    if model.PrimaryPart and model.PrimaryPart:IsA("BasePart") then
+        return model.PrimaryPart
+    end
+
+    for _, d in ipairs(model:GetDescendants()) do
+        if d:IsA("BasePart") then
+            return d
+        end
+    end
+
+    return nil
+end
+
+local function getHeadPart(target)
+    if not target then return nil end
+    if target:IsA("BasePart") then
+        return target
+    elseif target:IsA("Model") then
+        return findHeadPartInModel(target)
+    else
+        local anc = target:FindFirstAncestorOfClass("Model")
+        if anc then
+            return findHeadPartInModel(anc)
+        end
+    end
+    return nil
+end
+
+local function zeroVelocities(part)
+    if not part or not part:IsA("BasePart") then return end
+    pcall(function() part.AssemblyLinearVelocity = Vector3.new(0,0,0) end)
+    pcall(function() part.Velocity = Vector3.new(0,0,0) end)
+end
+
+local function teleportToHeadInstant(character, headPart)
+    if not character or not headPart then return false end
+    local hrp = character:FindFirstChild("HumanoidRootPart") or character:FindFirstChild("UpperTorso") or character:FindFirstChild("Torso")
+    if not hrp then return false end
+
+    local ok, headPos = pcall(function() return headPart.Position end)
+    if not ok or not headPos then return false end
+    if not isValidPosition(headPos) then return false end
+
+    local destination = CFrame.new(headPos + Vector3.new(0, TELEPORT_OFFSET_ABOVE_HEAD, 0))
+
+    local success, err = pcall(function()
+        hrp.CFrame = destination
+        zeroVelocities(hrp)
+        RunService.Heartbeat:Wait()
+        zeroVelocities(hrp)
+    end)
+    if not success then
+        warn("[TeleportPersistent1s] Erro ao aplicar CFrame:", tostring(err))
+    end
+    return success
+end
+
+local function sortByDistanceToPlayer(list)
+    local hrp = currentCharacter and (currentCharacter:FindFirstChild("HumanoidRootPart") or currentCharacter:FindFirstChild("Torso") or currentCharacter.PrimaryPart)
+    local playerPos = hrp and hrp.Position or Vector3.new(0,0,0)
+    table.sort(list, function(a,b)
+        local pa = (a:IsA("BasePart") and a.Position) or (a.PrimaryPart and a.PrimaryPart.Position) or Vector3.new(0,0,0)
+        local pb = (b:IsA("BasePart") and b.Position) or (b.PrimaryPart and b.PrimaryPart.Position) or Vector3.new(0,0,0)
+        return (pa - playerPos).Magnitude < (pb - playerPos).Magnitude
+    end)
+end
+
+local function mainLoop()
+    while true do
+        local ok, err = pcall(function()
+            if not currentCharacter or not currentCharacter.Parent then
+                currentCharacter = player.Character
+                if not currentCharacter or not currentCharacter.Parent then
+                    task.wait(0.1)
+                    return
+                end
+            end
+
+            local kisames = findKisames()
+            if #kisames == 0 then
+                task.wait(IDLE_WAIT_IF_NONE)
+                return
+            end
+
+            sortByDistanceToPlayer(kisames)
+
+            local limit = math.min(#kisames, MAX_KISAMES_TO_PROCESS)
+            for i = 1, limit do
+                if not currentCharacter or not currentCharacter.Parent then
+                    break
+                end
+
+                local target = kisames[i]
+                local head = nil
+                for attempt = 1, HEAD_FIND_RETRIES do
+                    head = getHeadPart(target)
+                    if head and head:IsDescendantOf(Workspace) then
+                        break
+                    end
+                    task.wait(HEAD_FIND_RETRY_DELAY)
+                end
+
+                if head then
+                    local teleported = false
+                    local s, e = pcall(function()
+                        teleported = teleportToHeadInstant(currentCharacter, head)
+                    end)
+                    if not s or not teleported then
+                    end
+
+                    if teleported then
+                        task.wait(MIN_WAIT_AFTER_SUCCESS)
+                    else
+                        task.wait(WAIT_BETWEEN_TELEPORTS)
+                    end
+                else
+                    task.wait(WAIT_BETWEEN_TELEPORTS)
+                end
+
+                if not player.Parent then
+                    return
+                end
+            end
+        end)
+        if not ok then
+            warn("[TeleportPersistent1s] Erro inesperado no loop principal:", tostring(err))
+            task.wait(0.2)
+        end
+
+        task.wait(0.01)
+    end
+end
+
+task.spawn(function()
+    task.wait(0.02)
+    mainLoop()
+end)
