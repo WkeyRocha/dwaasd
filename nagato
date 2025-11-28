@@ -5,13 +5,13 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local TELEPORT_OFFSET_ABOVE_HEAD = 1.6
-local WAIT_BETWEEN_TELEPORTS = 0.5
+local WAIT_BETWEEN_TELEPORTS = 0.7
 local HEAD_FIND_RETRIES = 6
 local HEAD_FIND_RETRY_DELAY = 0.03
 local MAX_NAGATOS_TO_PROCESS = 200
 local MAX_Y_ALLOWED = 10000
 local IDLE_WAIT_IF_NONE = 0.5
-local MIN_WAIT_AFTER_SUCCESS = 0.5
+local MIN_WAIT_AFTER_SUCCESS = 0.7
 
 local player = Players.LocalPlayer
 if not player then
