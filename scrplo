@@ -15,13 +15,13 @@ local Workspace = game:GetService("Workspace")
 local RunService = game:GetService("RunService")
 
 local TELEPORT_OFFSET_ABOVE_HEAD = 1.6   -- studs acima da cabeça
-local WAIT_BETWEEN_TELEPORTS = 0.5         -- intervalo entre teleports (1 segundo)
+local WAIT_BETWEEN_TELEPORTS = 0.7         -- intervalo entre teleports (1 segundo)
 local HEAD_FIND_RETRIES = 6              -- tentativas rápidas para achar a Head
 local HEAD_FIND_RETRY_DELAY = 0.03       -- delay entre tentativas
 local MAX_ZABUZAS_TO_PROCESS = 200       -- segurança
 local MAX_Y_ALLOWED = 10000              -- proteção contra valores absurdos de Y
 local IDLE_WAIT_IF_NONE = 0.5            -- espera maior se não houver nenhum Zabuza
-local MIN_WAIT_AFTER_SUCCESS = 0.5        -- espera de 1s depois de um teleport bem-sucedido
+local MIN_WAIT_AFTER_SUCCESS = 0.7        -- espera de 1s depois de um teleport bem-sucedido
 
 local player = Players.LocalPlayer
 if not player then
